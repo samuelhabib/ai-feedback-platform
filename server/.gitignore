@@ -1,0 +1,38 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+
+# Key files (private keys should not be committed)
+keys/*.pem
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Optional: VSCode settings
+.vscode/
+
+# Optional: Mac-specific system files
+._*
+.Spotlight-V100
+.Trashes
+
+# Optional: Database dumps
+*.sql
+*.sqlite
+
+# Optional: Coverage reports
+coverage/
+
+# Lock files (only if you want to ignore them — usually you commit package-lock.json)
+# package-lock.json
+# yarn.lock
