@@ -1,3 +1,4 @@
+// Load environment variables and start logging
 require('dotenv').config();
 console.log('Starting server...');
 
@@ -6,6 +7,7 @@ const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const { Pool } = require('pg');
 const fs = require('fs');
+const path = require('path');
 const OpenAI = require('openai');
 
 process.on('unhandledRejection', (reason, promise) => {
@@ -30,18 +32,13 @@ pool.on('error', (err) => {
 });
 
 // Keys and OpenAI client setup
-const path = require('path');
-
 const publicKey = fs.readFileSync(path.join(__dirname, 'keys', 'public_key.pem'), 'utf8');
 const privateKey = fs.readFileSync(path.join(__dirname, 'keys', 'private_key.pem'), 'utf8');
 
-// const publicKey = process.env.PUBLIC_KEY;
-// const privateKey = process.env.PRIVATE_KEY;
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Check environment variables
 if (!publicKey || !privateKey || !process.env.OPENAI_API_KEY || !process.env.DATABASE_URL) {
     console.error('Missing critical environment variables. Check your .env file.');
     process.exit(1);
@@ -53,18 +50,13 @@ app.post('/submit', async (req, res) => {
         const { feedback } = req.body;
         if (!feedback) return res.status(400).send({ error: 'Feedback is required.' });
 
-        // Encrypt feedback with Public Key
         const buffer = Buffer.from(feedback, 'utf-8');
-        const encrypted = crypto.publicEncrypt(
-            {
-                key: publicKey,
-                padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-                oaepHash: 'sha256',
-            },
-            buffer
-        );
+        const encrypted = crypto.publicEncrypt({
+            key: publicKey,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: 'sha256',
+        }, buffer);
 
-        // Save encrypted feedback into the database
         await pool.query(
             'INSERT INTO feedback (content, created_at, summarized) VALUES ($1, NOW(), FALSE)',
             [encrypted.toString('base64')]
@@ -86,20 +78,23 @@ app.get('/summarize', async (req, res) => {
             return res.status(200).send({ message: 'No feedback to summarize.' });
         }
 
-        // Decrypt feedbacks
         const decryptedFeedbacks = rows.map(row => {
             const buffer = Buffer.from(row.content, 'base64');
-            return crypto.privateDecrypt(
-                {
-                    key: privateKey,
-                    padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-                    oaepHash: 'sha256',
-                },
-                buffer
-            ).toString('utf-8');
+            return crypto.privateDecrypt({
+                key: privateKey,
+                padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                oaepHash: 'sha256',
+            }, buffer).toString('utf-8');
         });
 
-        const prompt = `Summarize the following feedback into key themes:\n\n${decryptedFeedbacks.join('\n\n')}`;
+        const prompt = `You are an AI assistant summarizing feedback for an enterprise platform. Analyze the following submissions and return:
+
+1. \u2728 Key Themes (concise bullets)
+2. \ud83d\udd0d Suggested Tags (e.g., #communication, #burnout)
+3. \ud83d\udd0a Tone Assessment (e.g., constructive, frustrated)
+4. \u26a0\ufe0f Flagged Issues (e.g., abuse, burnout, safety concerns)
+
+Submissions:\n\n${decryptedFeedbacks.map((f, i) => `${i + 1}. "${f}"`).join('\n\n')}`;
 
         const response = await openai.chat.completions.create({
             model: 'gpt-4o',
@@ -108,10 +103,8 @@ app.get('/summarize', async (req, res) => {
 
         const summary = response.choices[0].message.content;
 
-        // Save the summary
         await pool.query('INSERT INTO summaries (content, created_at) VALUES ($1, NOW())', [summary]);
 
-        // Mark feedbacks as summarized
         const ids = rows.map(row => row.id);
         await pool.query('UPDATE feedback SET summarized = TRUE WHERE id = ANY($1::int[])', [ids]);
 
