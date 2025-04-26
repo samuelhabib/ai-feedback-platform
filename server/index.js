@@ -40,8 +40,10 @@ pool.on('error', (err) => {
     process.exit(-1);
 });
 
+
 console.log('Database pool initialized.');
 
+// Keys and OpenAI client setup
 const publicKey = fs.readFileSync(path.join(__dirname, 'keys', 'public_key.pem'), 'utf8');
 const privateKey = fs.readFileSync(path.join(__dirname, 'keys', 'private_key.pem'), 'utf8');
 
@@ -49,7 +51,6 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Check environment variables
 if (!publicKey || !privateKey || !process.env.OPENAI_API_KEY || !process.env.DATABASE_URL) {
     console.error('Missing critical environment variables. Check your .env file.');
     process.exit(1);
@@ -69,17 +70,15 @@ app.post('/submit', async (req, res) => {
             return res.status(400).send({ error: 'Feedback is required.' });
         }
 
+
         console.log('POST /submit - Encrypting feedback.');
         // Encrypt feedback with Public Key
         const buffer = Buffer.from(feedback, 'utf-8');
-        const encrypted = crypto.publicEncrypt(
-            {
-                key: publicKey,
-                padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-                oaepHash: 'sha256',
-            },
-            buffer
-        );
+        const encrypted = crypto.publicEncrypt({
+            key: publicKey,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: 'sha256',
+        }, buffer);
 
         console.log('POST /submit - Storing encrypted feedback into database.');
         // Save encrypted feedback into the database
@@ -111,7 +110,6 @@ app.get('/summarize', async (req, res) => {
         }
 
         console.log(`GET /summarize - Found ${rows.length} feedbacks to summarize.`);
-
         const decryptedFeedbacks = rows.map(row => {
             const buffer = Buffer.from(row.content, 'base64');
             return crypto.privateDecrypt({
@@ -141,7 +139,6 @@ app.get('/summarize', async (req, res) => {
         const summary = response.choices[0].message.content;
         console.log('GET /summarize - Received summary from OpenAI.');
 
-        // Save the summary
         await pool.query('INSERT INTO summaries (content, created_at) VALUES ($1, NOW())', [summary]);
         console.log('GET /summarize - Stored new summary into database.');
 
